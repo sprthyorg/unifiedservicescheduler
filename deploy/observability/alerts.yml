@@ -1,0 +1,71 @@
+# Prometheus alert rules for scheduler-service. Every alert links to a runbook section
+# (05-operations/runbook_v1.0.md). SLO maths: 05-operations/slos_v1.0.md.
+groups:
+  - name: scheduler-slo
+    rules:
+      - alert: SchedulerApiErrorBudgetBurnFast
+        # 14.4x burn over 1h (and 5m) consumes 2 % of the 30-day 99.9 % budget → page
+        expr: |
+          (sum(rate(http_requests_total{service="scheduler-service",route=~"/v1/.*",status=~"5.."}[1h]))
+            / sum(rate(http_requests_total{service="scheduler-service",route=~"/v1/.*"}[1h]))) > (14.4 * 0.001)
+          and
+          (sum(rate(http_requests_total{service="scheduler-service",route=~"/v1/.*",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{service="scheduler-service",route=~"/v1/.*"}[5m]))) > (14.4 * 0.001)
+        labels: { severity: page }
+        annotations:
+          summary: Scheduler API is burning its error budget fast (NFR-01)
+          runbook: 05-operations/runbook_v1.0.md#rb-01-5xx-spike
+
+      - alert: SchedulerApiErrorBudgetBurnSlow
+        expr: |
+          (sum(rate(http_requests_total{service="scheduler-service",route=~"/v1/.*",status=~"5.."}[6h]))
+            / sum(rate(http_requests_total{service="scheduler-service",route=~"/v1/.*"}[6h]))) > (6 * 0.001)
+        for: 30m
+        labels: { severity: page }
+        annotations:
+          summary: Sustained 5xx above 6x budget burn (NFR-01)
+          runbook: 05-operations/runbook_v1.0.md#rb-01-5xx-spike
+
+      - alert: BookingLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(
+            http_request_duration_seconds_bucket{service="scheduler-service",route="/v1/appointments",method="POST"}[10m]))) > 0.5
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: Booking p95 above 500 ms (NFR-02)
+          runbook: 05-operations/runbook_v1.0.md#rb-02-slow-booking-or-availability
+
+      - alert: AvailabilityLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(
+            http_request_duration_seconds_bucket{service="scheduler-service",route="/v1/availability"}[10m]))) > 0.3
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: Availability p95 above 300 ms (NFR-02)
+          runbook: 05-operations/runbook_v1.0.md#rb-02-slow-booking-or-availability
+
+      - alert: SlotUnavailableRatioHigh
+        # More than half of booking attempts find no technician+bay for 30 min → capacity or reference-data problem
+        expr: |
+          sum(rate(scheduler_booking_rejections_total{code="SLOT_UNAVAILABLE"}[30m]))
+            / (sum(rate(scheduler_appointments_confirmed_total[30m])) + sum(rate(scheduler_booking_rejections_total{code="SLOT_UNAVAILABLE"}[30m]))) > 0.5
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: Most booking attempts find no free technician + bay
+          runbook: 05-operations/runbook_v1.0.md#rb-03-many-slot_unavailable
+
+      - alert: SchedulerNotReady
+        expr: kube_deployment_status_replicas_available{namespace="scheduler",deployment="scheduler-api"} < 2
+          or sum(kube_pod_status_ready{namespace="scheduler",pod=~"scheduler-api.*",condition="true"}) < 2
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: Fewer than 2 ready scheduler pods (DB unreachable or crash loop)
+          runbook: 05-operations/runbook_v1.0.md#rb-05-pods-not-ready--database-unreachable
+
+# Log-based alert (configure in the log platform, e.g. CloudWatch Logs metric filter):
+#   filter: { $.code = "EXCLUSION_BACKSTOP" }   threshold: ≥ 1 in 5 min   severity: page
+#   runbook: 05-operations/runbook_v1.0.md#rb-04-exclusion-backstop-triggered

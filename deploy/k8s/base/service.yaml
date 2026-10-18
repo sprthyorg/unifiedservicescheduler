@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler-api
+  labels: { app: scheduler-api }
+spec:
+  selector: { app: scheduler-api }
+  ports: [{ name: http, port: 80, targetPort: http }]

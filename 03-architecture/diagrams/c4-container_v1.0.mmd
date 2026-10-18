@@ -1,0 +1,24 @@
+%% USS-ARC-001 v1.0.0 — C4 containers
+flowchart LR
+  subgraph Clients
+    app[Customer web / mobile]
+    portal[Dealer portal]
+  end
+  gw[API gateway<br/>JWT, rate limit, WAF]
+  subgraph EKS["EKS cluster · namespace scheduler"]
+    api["scheduler-api<br/>FastAPI · 3–12 pods"]
+    relay["outbox-relay (1.1)"]
+    mig["db-migrate Job<br/>(Flyway)"]
+  end
+  db[("RDS PostgreSQL 16<br/>Multi-AZ")]
+  bus[["Event bus (MSK/Kafka) 1.1"]]
+  etl["Reference-data ETL<br/>(DMS / CRM)"]
+  prom[Prometheus / Grafana / Alertmanager]
+  app --> gw --> api
+  portal --> gw
+  api -->|SQL, tx + advisory lock| db
+  mig --> db
+  etl --> db
+  relay --> db
+  relay --> bus
+  prom -. scrape /metrics .-> api

@@ -1,0 +1,42 @@
+# Pins every versioned artefact that makes up system release 1.0.0 (VERSIONING.md §6)
+release: 1.0.0
+date: 2026-10-15
+status: release-candidate        # becomes "released" when approvals.md is complete
+git_tags: [v1.0.0, scheduler-service-v1.0.0, requirements-v1.0]
+requirements:
+  business_scenario: 01-requirements/business-scenario_v1.0.md@1.0.0
+  requirements: 01-requirements/requirements_v1.0.md@1.0.0
+  assumptions: 01-requirements/assumptions_v1.0.md@1.0.0
+  capacity: 01-requirements/capacity-estimation_v1.0.md@1.0.0
+  traceability: 01-requirements/traceability-matrix_v1.1.csv@1.1.0
+planning:
+  roadmap: 02-planning/roadmap_v1.0.md@1.0.0
+  backlog: 02-planning/backlog_v1.0.md@1.0.0
+  test_strategy: 02-planning/test-strategy_v1.0.md@1.0.0
+architecture:
+  description: 03-architecture/architecture_v1.1.md@1.1.0
+  system_design: 03-architecture/system-design_v1.0.md@1.0.0
+  adrs: [ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008]
+design:
+  api_contract: 04-design/api/scheduler-service/v1/openapi_1.0.0.yaml
+  data_model: 04-design/data-model/data-model_v1.0.md@1.0.0
+  events: { appointment.confirmed: v1, appointment.cancelled: v1 }
+components:
+  scheduler-service:
+    version: 1.0.0
+    image: <account>.dkr.ecr.ap-south-1.amazonaws.com/unified-service-scheduler/scheduler-service   # Amazon ECR (ADR-008)
+    image_tag: <git-sha>         # immutable; filled by CI on first push to main
+    image_digest: null           # filled by CI on first push
+    db_schema: V001 (+ V002 demo seed, non-production only)
+    runtime: python 3.12, fastapi, postgresql 16
+deploy:
+  kustomize_overlays: [staging, production]
+  terraform: [deploy/terraform/envs/shared, deploy/terraform/envs/staging, deploy/terraform/envs/production]   # deploy 1.1.0 (ADR-007)
+  pipelines: [.github/workflows/ci-cd.yml, .github/workflows/infra.yml]
+operations:
+  slos: 05-operations/slos_v1.0.md@1.0.0
+  runbook: 05-operations/runbook_v1.0.md@1.0.0
+ai:
+  instructions: 00-ai-instructions/CLAUDE.md@1.0.0
+  prompts: 00-ai-instructions/prompts/phase-prompts_v1.0.0.md
+  run: 00-ai-instructions/ai-runs/2026-10-15_run-001_end-to-end@v1.0.0

@@ -1,0 +1,18 @@
+# Only the ingress controller may call the API; the API may only reach PostgreSQL and DNS (NFR-08).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: scheduler-api
+spec:
+  podSelector: { matchLabels: { app: scheduler-api } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+      ports: [{ port: 8000 }]
+  egress:
+    - to: [{ ipBlock: { cidr: 10.20.0.0/16 } }]   # VPC data subnets (RDS) — set per environment
+      ports: [{ port: 5432 }]
+    - to: [{ namespaceSelector: {}, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]

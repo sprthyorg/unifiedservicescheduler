@@ -1,0 +1,29 @@
+%% USS-ARC-001 v1.1.0 — C4 containers (adds ECR + GitHub Actions, ADR-007/008)
+flowchart LR
+  subgraph Clients
+    app[Customer web / mobile]
+    portal[Dealer portal]
+  end
+  gw[API gateway<br/>JWT, rate limit, WAF]
+  subgraph EKS["EKS cluster · namespace scheduler"]
+    api["scheduler-api<br/>FastAPI · 3–12 pods"]
+    relay["outbox-relay (1.1)"]
+    mig["db-migrate Job<br/>(Flyway)"]
+  end
+  db[("RDS PostgreSQL 16<br/>Multi-AZ")]
+  ecr[("Amazon ECR<br/>scheduler-service images")]
+  gha["GitHub Actions<br/>ci-cd.yml · infra.yml (OIDC)"]
+  bus[["Event bus (MSK/Kafka) 1.1"]]
+  etl["Reference-data ETL<br/>(DMS / CRM)"]
+  prom[Prometheus / Grafana / Alertmanager]
+  app --> gw --> api
+  portal --> gw
+  api -->|SQL, tx + advisory lock| db
+  mig --> db
+  etl --> db
+  relay --> db
+  relay --> bus
+  prom -. scrape /metrics .-> api
+  gha -->|push image by SHA| ecr
+  ecr -->|node role pull, by digest| api
+  gha -->|kustomize apply · terraform apply| EKS

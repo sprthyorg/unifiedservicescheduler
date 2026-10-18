@@ -1,0 +1,13 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: scheduler-api
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: scheduler-api }
+  minReplicas: 3       # one per AZ (NFR-01)
+  maxReplicas: 12      # ≈ 1,800 RPS headroom vs 600 RPS design target (NFR-03/04)
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }
+  behavior:
+    scaleDown: { stabilizationWindowSeconds: 300 }

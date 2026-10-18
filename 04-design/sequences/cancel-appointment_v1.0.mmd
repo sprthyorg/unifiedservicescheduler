@@ -1,0 +1,22 @@
+%% USS-DSN-SEQ-002 v1.0.0 — POST /v1/appointments/{id}/cancel (FR-07)
+sequenceDiagram
+  autonumber
+  actor C as Customer
+  participant API as scheduler-api
+  participant DB as PostgreSQL
+  C->>API: POST /v1/appointments/{id}/cancel {customer_id, reason}
+  API->>DB: BEGIN; SELECT appointment
+  alt missing or owned by someone else
+    API-->>C: 404 APPOINTMENT_NOT_FOUND
+  else already CANCELLED
+    API-->>C: 200 (unchanged, idempotent)
+  else started (now ≥ start)
+    API-->>C: 409 CANCELLATION_WINDOW_CLOSED
+  else
+    API->>DB: UPDATE … SET status='CANCELLED', version=v+1 WHERE id=? AND version=v
+    alt 0 rows
+      API-->>C: 409 CONCURRENT_MODIFICATION
+    end
+    API->>DB: INSERT outbox (appointment.cancelled); COMMIT
+    API-->>C: 200 appointment (resources freed — exclusion applies to CONFIRMED only)
+  end

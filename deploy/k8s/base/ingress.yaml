@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: scheduler-api
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal          # reachable only from the API gateway VPC link
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06   # TLS 1.2+ (NFR-08)
+    alb.ingress.kubernetes.io/healthcheck-path: /health/ready
+spec:
+  ingressClassName: alb
+  tls: [{ hosts: [api.scheduler.example] }]
+  rules:
+    - host: api.scheduler.example
+      http:
+        paths:
+          - path: /v1
+            pathType: Prefix
+            backend: { service: { name: scheduler-api, port: { name: http } } }

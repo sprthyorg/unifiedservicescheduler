@@ -1,0 +1,54 @@
+# Runs before every rollout (deploy/README.md "Pipeline order"):
+#   1. db-bootstrap    — idempotent role/grant setup as the RDS master (db-bootstrap.sql, ADR-007 §3)
+#   2. copy-migrations — migrations ship inside the app image → same version as the code
+#   3. flyway          — forward-only migrations as scheduler_owner (ADR-006)
+# Migrations must be backward compatible with the running image (expand/contract, VERSIONING.md §5).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scheduler-db-migrate
+  labels: { app.kubernetes.io/component: migration }
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+      volumes:
+        - { name: sql, emptyDir: {} }
+        - { name: bootstrap, configMap: { name: scheduler-db-bootstrap-sql } }
+      initContainers:
+        - name: db-bootstrap
+          image: postgres:16-alpine          # only psql is used
+          command: ["/bin/sh", "-c"]
+          args:
+            - psql -v ON_ERROR_STOP=1 -X -q
+                -v owner_user="$OWNER_USER" -v owner_password="$OWNER_PASSWORD"
+                -v app_user="$APP_USER" -v app_password="$APP_PASSWORD" -v dbname="$PGDATABASE"
+                -f /bootstrap/db-bootstrap.sql
+          env:
+            - { name: PGSSLMODE, value: require }
+            - { name: PGCONNECT_TIMEOUT, value: "10" }
+          envFrom: [{ secretRef: { name: scheduler-bootstrap-secrets } }]
+          volumeMounts: [{ name: bootstrap, mountPath: /bootstrap, readOnly: true }]
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 128Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+        - name: copy-migrations
+          image: scheduler-service
+          command: ["/bin/sh", "-c"]
+          args:
+            - cp /srv/migrations/V*.sql /sql/ &&
+              if [ "$APPLY_DEMO_SEED" != "true" ]; then rm -f /sql/V002__seed_demo_reference_data.sql; fi
+          envFrom: [{ configMapRef: { name: scheduler-config } }]
+          volumeMounts: [{ name: sql, mountPath: /sql }]
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+      containers:
+        - name: flyway
+          image: flyway/flyway:10.17-alpine
+          args: ["-locations=filesystem:/sql", "-validateMigrationNaming=true", "-connectRetries=10", "migrate"]
+          envFrom: [{ secretRef: { name: scheduler-migrate-secrets } }]
+          volumeMounts: [{ name: sql, mountPath: /sql, readOnly: true }]
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 512Mi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }

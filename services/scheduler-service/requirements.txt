@@ -1,0 +1,6 @@
+fastapi>=0.115,<1
+pydantic>=2.9,<3
+uvicorn[standard]>=0.30
+psycopg[binary]>=3.2
+psycopg-pool>=3.2
+tzdata>=2024.1          # IANA zones inside slim containers (dealership time zones)

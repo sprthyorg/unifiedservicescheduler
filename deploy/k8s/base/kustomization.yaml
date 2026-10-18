@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# The namespace itself is created by Terraform (envs/<env>/main.tf) so the deploy role can be
+# namespace-scoped (ADR-007); Kustomize only places resources into it.
+namespace: scheduler
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: unified-service-scheduler
+      app.kubernetes.io/version: "1.0.0"
+    includeSelectors: false
+resources:
+  - configmap.yaml
+  - external-secret.yaml
+  - job-migrate.yaml
+  - deployment-api.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+  - ingress.yaml
+configMapGenerator:
+  - name: scheduler-db-bootstrap-sql
+    files: [db-bootstrap.sql]
+    options:
+      labels: { app.kubernetes.io/component: migration }
+images:
+  - name: scheduler-service
+    newName: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/unified-service-scheduler/scheduler-service   # ADR-008
+    newTag: 1.0.0   # CI pins the immutable digest

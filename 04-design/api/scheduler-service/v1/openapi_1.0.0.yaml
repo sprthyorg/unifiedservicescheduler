@@ -1,0 +1,366 @@
+openapi: 3.1.0
+info:
+  title: Unified Service Scheduler — scheduler-service API
+  version: 1.0.0
+  description: |
+    Book, inspect and cancel vehicle service appointments. The scheduler — not the client — chooses
+    the technician and service bay; a booking succeeds only when both are free for the full service
+    duration (FR-02).
+
+    * Document ID: USS-API-001 · Contract version 1.0.0 · Status: Baselined (2026-10-15)
+    * Versioning: URL major (`/v1`) + SemVer of this document. Additive changes → minor;
+      breaking changes → new `/v2` path and `DEPRECATIONS.md` entry (VERSIONING.md §3).
+    * Authentication: OAuth 2.0 bearer JWT validated at the API gateway; the gateway enforces that
+      `customer_id` equals the token subject unless the caller holds the `service-advisor` role (A-04).
+    * Time: request instants are RFC 3339 with a UTC offset. Appointment instants are returned in UTC;
+      availability slots are returned in the dealership's local offset (A-10).
+    * Errors: RFC 9457 `application/problem+json` with a stable `code`.
+servers:
+  - url: https://api.scheduler.example
+    description: production
+  - url: https://api.staging.scheduler.example
+    description: staging
+  - url: http://localhost:8000
+    description: local
+security:
+  - bearerAuth: []
+tags:
+  - name: appointments
+  - name: availability
+  - name: reference
+  - name: health
+
+paths:
+  /v1/appointments:
+    post:
+      tags: [appointments]
+      operationId: bookAppointment
+      summary: Book a service appointment (FR-01, FR-02, FR-03, FR-06, FR-08, FR-09)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookAppointmentRequest" }
+            example:
+              customer_id: CUS-1001
+              vehicle_id: VEH-5001
+              dealership_id: DLR-HYD-01
+              service_type_id: SVC-PERIODIC
+              desired_start_time: "2026-10-20T10:00:00+05:30"
+              notes: Rattle from front-left wheel
+      responses:
+        "201":
+          description: Appointment confirmed; technician and bay allocated.
+          headers:
+            Location: { schema: { type: string }, description: URL of the new appointment }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+        "200":
+          description: Idempotent replay — the appointment created by the first request with this key.
+          headers:
+            Idempotent-Replayed: { schema: { type: string, enum: ["true"] } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "409":
+          description: |
+            `SLOT_UNAVAILABLE` (with `alternatives`), `VEHICLE_ALREADY_BOOKED`, or `IDEMPOTENCY_KEY_REUSED`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/SlotUnavailableProblem" }
+              example:
+                type: https://errors.scheduler.example/slot-unavailable
+                title: Slot Unavailable
+                status: 409
+                code: SLOT_UNAVAILABLE
+                detail: no qualified technician and compatible service bay are both free for the full duration
+                instance: /v1/appointments
+                alternatives:
+                  - { start_time: "2026-10-20T08:15:00+05:30", end_time: "2026-10-20T09:45:00+05:30" }
+                  - { start_time: "2026-10-20T08:30:00+05:30", end_time: "2026-10-20T10:00:00+05:30" }
+                  - { start_time: "2026-10-20T11:30:00+05:30", end_time: "2026-10-20T13:00:00+05:30" }
+        "422":
+          description: |
+            `VALIDATION_FAILED`, `UNKNOWN_DEALERSHIP`, `UNKNOWN_SERVICE_TYPE`, `UNKNOWN_CUSTOMER`,
+            `UNKNOWN_VEHICLE`, `VEHICLE_NOT_OWNED_BY_CUSTOMER`, `START_TIME_NOT_ALIGNED`,
+            `LEAD_TIME_TOO_SHORT`, `BEYOND_BOOKING_HORIZON`, `OUTSIDE_BUSINESS_HOURS`.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+    get:
+      tags: [appointments]
+      operationId: listAppointments
+      summary: List a customer's appointments, newest first (FR-05)
+      parameters:
+        - { name: customer_id, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 64 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: Appointments
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Appointment" } }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /v1/appointments/{appointment_id}:
+    get:
+      tags: [appointments]
+      operationId: getAppointment
+      summary: Get an appointment (FR-05)
+      parameters: [{ $ref: "#/components/parameters/AppointmentId" }]
+      responses:
+        "200":
+          description: Appointment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /v1/appointments/{appointment_id}/cancel:
+    post:
+      tags: [appointments]
+      operationId: cancelAppointment
+      summary: Cancel an appointment and release its technician and bay (FR-07)
+      description: Idempotent — cancelling an already-cancelled appointment returns it unchanged.
+      parameters: [{ $ref: "#/components/parameters/AppointmentId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelAppointmentRequest" }
+      responses:
+        "200":
+          description: Cancelled appointment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`CANCELLATION_WINDOW_CLOSED` (already started) or `CONCURRENT_MODIFICATION`."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /v1/availability:
+    get:
+      tags: [availability]
+      operationId: getAvailability
+      summary: Bookable start times for a service type at a dealership on a date (FR-04)
+      description: |
+        Advisory snapshot. Only `POST /v1/appointments` reserves resources; a listed slot may be taken
+        by the time it is booked (the booking then returns 409 with fresh alternatives).
+      parameters:
+        - { name: dealership_id, in: query, required: true, schema: { type: string } }
+        - { name: service_type_id, in: query, required: true, schema: { type: string } }
+        - { name: date, in: query, required: true, description: Dealership-local date, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Available slots
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Availability" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /v1/dealerships:
+    get:
+      tags: [reference]
+      operationId: listDealerships
+      summary: List dealerships
+      responses:
+        "200":
+          description: Dealerships
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Dealership" } }
+
+  /v1/service-types:
+    get:
+      tags: [reference]
+      operationId: listServiceTypes
+      summary: List service types
+      responses:
+        "200":
+          description: Service types
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ServiceType" } }
+
+  /health/live:
+    get:
+      tags: [health]
+      operationId: live
+      security: []
+      summary: Liveness probe
+      responses: { "200": { description: Process is alive } }
+
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: ready
+      security: []
+      summary: Readiness probe (database reachable)
+      responses:
+        "200": { description: Ready }
+        "503": { description: Database unreachable }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated unique key (UUID v4 recommended), scoped per customer, retained for the life of the appointment.
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    AppointmentId:
+      name: appointment_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    NotFound:
+      description: "`APPOINTMENT_NOT_FOUND` — also returned when the appointment belongs to another customer."
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ValidationFailed:
+      description: "`VALIDATION_FAILED` or `UNKNOWN_*`."
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    IdempotencyKeyRequired:
+      description: "`IDEMPOTENCY_KEY_REQUIRED`"
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: "^[A-Za-z0-9_-]+$"
+
+    BookAppointmentRequest:
+      type: object
+      additionalProperties: false
+      required: [customer_id, vehicle_id, dealership_id, service_type_id, desired_start_time]
+      properties:
+        customer_id: { $ref: "#/components/schemas/Id" }
+        vehicle_id: { $ref: "#/components/schemas/Id" }
+        dealership_id: { $ref: "#/components/schemas/Id" }
+        service_type_id: { $ref: "#/components/schemas/Id" }
+        desired_start_time:
+          type: string
+          format: date-time
+          description: Must carry a UTC offset, align to 15-minute slots, be ≥ 60 min and ≤ 90 days ahead, and the full duration must fall inside opening hours.
+        notes: { type: [string, "null"], maxLength: 500 }
+
+    CancelAppointmentRequest:
+      type: object
+      additionalProperties: false
+      required: [customer_id]
+      properties:
+        customer_id: { $ref: "#/components/schemas/Id" }
+        reason: { type: [string, "null"], maxLength: 500 }
+
+    Appointment:
+      type: object
+      required: [id, reference, status, customer_id, vehicle_id, dealership_id, service_type_id, technician_id,
+                 service_bay_id, start_time, end_time, created_at, updated_at, version]
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string, example: APT-K3Q7M2XA, description: Human-friendly booking reference }
+        status: { type: string, enum: [CONFIRMED, CANCELLED] }
+        customer_id: { type: string }
+        vehicle_id: { type: string }
+        dealership_id: { type: string }
+        service_type_id: { type: string }
+        technician_id: { type: string, description: Allocated by the scheduler }
+        service_bay_id: { type: string, description: Allocated by the scheduler }
+        start_time: { type: string, format: date-time }
+        end_time: { type: string, format: date-time, description: start_time + service type duration }
+        notes: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        cancelled_at: { type: [string, "null"], format: date-time }
+        cancellation_reason: { type: [string, "null"] }
+        version: { type: integer, minimum: 1 }
+
+    Slot:
+      type: object
+      required: [start_time, end_time]
+      properties:
+        start_time: { type: string, format: date-time }
+        end_time: { type: string, format: date-time }
+
+    Availability:
+      type: object
+      required: [dealership_id, service_type_id, date, timezone, duration_minutes, slots]
+      properties:
+        dealership_id: { type: string }
+        service_type_id: { type: string }
+        date: { type: string, format: date }
+        timezone: { type: string, example: Asia/Kolkata }
+        duration_minutes: { type: integer }
+        slots:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/Slot"
+              - type: object
+                required: [capacity]
+                properties:
+                  capacity: { type: integer, minimum: 1, description: "min(free qualified technicians, free compatible bays)" }
+
+    Dealership:
+      type: object
+      required: [id, name, timezone]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        timezone: { type: string }
+
+    ServiceType:
+      type: object
+      required: [id, name, duration_minutes, required_skill, required_bay_capability]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        duration_minutes: { type: integer }
+        required_skill: { type: string }
+        required_bay_capability: { type: string }
+
+    Problem:
+      type: object
+      required: [type, title, status, code, detail, instance]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        instance: { type: string }
+
+    SlotUnavailableProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          properties:
+            alternatives:
+              type: array
+              maxItems: 3
+              items: { $ref: "#/components/schemas/Slot" }

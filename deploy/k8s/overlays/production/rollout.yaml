@@ -1,0 +1,33 @@
+# Argo Rollout that takes over the base Deployment's pod template (workloadRef)
+# and adds canary steps with automated analysis (ADR-006).
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: scheduler-api
+  labels: { app.kubernetes.io/component: api }
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app: scheduler-api }
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: scheduler-api
+    scaleDown: progressively
+  strategy:
+    canary:
+      steps:
+        - setWeight: 10
+        - analysis:
+            templates: [{ templateName: scheduler-api-canary-health }]
+            args:
+              - name: canary-hash
+                valueFrom: { podTemplateHashValue: Latest }
+        - setWeight: 50
+        - analysis:
+            templates: [{ templateName: scheduler-api-canary-health }]
+            args:
+              - name: canary-hash
+                valueFrom: { podTemplateHashValue: Latest }
+        - setWeight: 100

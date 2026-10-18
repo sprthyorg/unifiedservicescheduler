@@ -1,0 +1,33 @@
+[project]
+name = "unified-service-scheduler"
+version = "1.0.0"
+description = "Unified Service Scheduler — scheduler-service (appointment booking with technician + bay allocation)"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -m 'not integration'"
+markers = ["integration: needs a real PostgreSQL (APP_TEST_DATABASE_URL); run in the CI integration stage"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["S101", "S608"]  # asserts in tests; SQL strings are parameterised, column list is a constant
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Domain stays framework-free"
+type = "forbidden"
+source_modules = ["app.domain"]
+forbidden_modules = ["fastapi", "starlette", "pydantic", "psycopg", "psycopg_pool", "app.api", "app.repositories", "app.services"]

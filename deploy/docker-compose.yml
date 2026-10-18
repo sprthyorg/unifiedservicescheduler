@@ -1,0 +1,47 @@
+# Local full stack: PostgreSQL 16 + one-shot migrations + scheduler API.
+#   docker compose -f deploy/docker-compose.yml up --build
+#   open http://localhost:8000/docs
+name: unified-service-scheduler
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: scheduler
+      POSTGRES_PASSWORD: scheduler          # local only — real environments use the secret store (NFR-07)
+      POSTGRES_DB: scheduler
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scheduler"]
+      interval: 3s
+      retries: 20
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: { PGPASSWORD: scheduler }
+    volumes: ["../services/scheduler-service/migrations:/migrations:ro"]
+    entrypoint: ["/bin/sh", "-c"]
+    # Idempotent for local use: skip if the schema already exists. Real environments run Flyway (deploy/README.md).
+    command:
+      - |
+        if psql -h postgres -U scheduler -d scheduler -tAc "select 1 from pg_tables where tablename='appointments'" | grep -q 1; then
+          echo "schema present, skipping"; exit 0; fi
+        for f in /migrations/V*.sql; do echo "applying $$f"; psql -h postgres -U scheduler -d scheduler -v ON_ERROR_STOP=1 -f "$$f" || exit 1; done
+
+  api:
+    build:
+      context: ../services/scheduler-service
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      APP_ENV: local
+      APP_DATABASE_URL: postgresql://scheduler:scheduler@postgres:5432/scheduler
+      APP_LOG_LEVEL: INFO
+    ports: ["8000:8000"]
+    read_only: true
+    tmpfs: [/tmp]
+
+volumes:
+  pgdata:

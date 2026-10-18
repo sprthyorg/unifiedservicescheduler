@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.scheduler.example/events/appointment.confirmed/v1.schema.json",
+  "title": "appointment.confirmed v1",
+  "description": "Emitted once when an appointment is confirmed (FR-03, FR-10). Delivery is at-least-once; deduplicate on envelope id.",
+  "type": "object",
+  "required": ["id", "type", "schema_version", "occurred_at", "aggregate_id", "payload"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "type": { "const": "appointment.confirmed" },
+    "schema_version": { "const": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "aggregate_id": { "type": "string", "format": "uuid" },
+    "payload": { "$ref": "#/$defs/appointment" }
+  },
+  "$defs": {
+    "appointment": {
+      "type": "object",
+      "required": ["appointment_id", "reference", "customer_id", "vehicle_id", "dealership_id", "service_type_id",
+                   "technician_id", "service_bay_id", "start_time", "end_time", "status", "version"],
+      "properties": {
+        "appointment_id": { "type": "string", "format": "uuid" },
+        "reference": { "type": "string", "pattern": "^APT-[A-Z2-7]{8}$" },
+        "customer_id": { "type": "string" },
+        "vehicle_id": { "type": "string" },
+        "dealership_id": { "type": "string" },
+        "service_type_id": { "type": "string" },
+        "technician_id": { "type": "string" },
+        "service_bay_id": { "type": "string" },
+        "start_time": { "type": "string", "format": "date-time" },
+        "end_time": { "type": "string", "format": "date-time" },
+        "status": { "const": "CONFIRMED" },
+        "version": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    }
+  }
+}

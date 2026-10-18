@@ -1,0 +1,32 @@
+# Argo Rollouts canary analysis (ADR-006). Used by the production Rollout:
+# 10% → analyse 5 min → 50% → analyse 5 min → 100%; abort and roll back on failure.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: scheduler-api-canary-health
+spec:
+  metrics:
+    - name: error-rate
+      interval: 1m
+      count: 5
+      failureLimit: 1
+      successCondition: result[0] < 0.01
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            sum(rate(http_requests_total{service="scheduler-service",status=~"5..",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m]))
+              / sum(rate(http_requests_total{service="scheduler-service",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m]))
+    - name: p95-latency
+      interval: 1m
+      count: 5
+      failureLimit: 1
+      successCondition: result[0] < 0.5
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            histogram_quantile(0.95, sum by (le) (rate(
+              http_request_duration_seconds_bucket{service="scheduler-service",rollouts_pod_template_hash="{{args.canary-hash}}"}[2m])))
+  args:
+    - name: canary-hash

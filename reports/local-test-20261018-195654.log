@@ -1,0 +1,40 @@
+
+━━━ 1. Preflight (Docker)
+Docker Desktop not running — starting it…
+
+━━━ 2. Deploy (PostgreSQL → migrations → API)
+ Image unified-service-scheduler-api Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 682B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.25kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1.7
+#3 ERROR: failed to do request: Head "https://registry-1.docker.io/v2/docker/dockerfile/manifests/1.7": dialing registry-1.docker.io:443 container via direct connection because Docker Desktop has no HTTPS proxy: connecting to registry-1.docker.io:443: dial tcp: lookup registry-1.docker.io: no such host
+------
+ > resolve image config for docker-image://docker.io/docker/dockerfile:1.7:
+------
+Dockerfile:1
+
+--------------------
+
+   1 | >>> # syntax=docker/dockerfile:1.7
+
+   2 |     # ---- build stage: install dependencies into a virtualenv -------------------
+
+   3 |     FROM python:3.12-slim AS build
+
+--------------------
+
+failed to solve: failed to resolve source metadata for docker.io/docker/dockerfile:1.7: failed to do request: Head "https://registry-1.docker.io/v2/docker/dockerfile/manifests/1.7": dialing registry-1.docker.io:443 container via direct connection because Docker Desktop has no HTTPS proxy: connecting to registry-1.docker.io:443: dial tcp: lookup registry-1.docker.io: no such host
+
+
+━━━ Summary
+  ✅ Docker available (3s)
+  ❌ docker compose up (0s)
+  stack stopped, data deleted
+  log: /Users/sprthy/work/tech/systemdesign/claude_sample/unified_service_scheduler/reports/local-test-20261018-195654.log
+RESULT: FAIL

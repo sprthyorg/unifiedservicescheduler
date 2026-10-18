@@ -1,0 +1,6 @@
+# Model configuration used to generate release 1.0.0 artefacts
+model: claude-opus-5-5
+tool: Claude Code (desktop)
+instructions: 00-ai-instructions/CLAUDE.md@1.0.0
+prompts: 00-ai-instructions/prompts/phase-prompts_v1.0.0.md
+human_review_required: true

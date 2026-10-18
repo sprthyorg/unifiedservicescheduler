@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: scheduler
+resources:
+  - ../../base
+  - rollout-analysis.yaml
+  - rollout.yaml
+patches:
+  # The Rollout owns scaling in production; point the HPA at it.
+  - target: { kind: HorizontalPodAutoscaler, name: scheduler-api }
+    patch: |
+      - op: replace
+        path: /spec/scaleTargetRef
+        value: { apiVersion: argoproj.io/v1alpha1, kind: Rollout, name: scheduler-api }
+  # workloadRef: the Deployment only provides the pod template.
+  - target: { kind: Deployment, name: scheduler-api }
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 0

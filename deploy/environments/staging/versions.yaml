@@ -1,0 +1,6 @@
+# What is deployed where — updated by the pipeline on each successful deploy.
+environment: staging
+system: unified-service-scheduler
+components:
+  scheduler-service: { version: 1.0.0, image_digest: "pending-first-deploy", api_contract: 1.0.0, schema: V002 }
+docs_baseline: { requirements: v1.0, architecture: 1.0.0, design: 1.0.0 }

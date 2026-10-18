@@ -1,0 +1,75 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: scheduler-staging
+resources:
+  - ../../base
+patches:
+  # Secrets Manager paths are per environment (deploy/terraform/modules/database)
+  - target: { kind: ExternalSecret, name: scheduler-secrets }
+    patch: |
+      - op: replace
+        path: /spec/data/0/remoteRef/key
+        value: scheduler/staging/db
+  # Secrets Manager paths are per environment (deploy/terraform/modules/database)
+  - target: { kind: ExternalSecret, name: scheduler-migrate-secrets }
+    patch: |
+      - op: replace
+        path: /spec/data/0/remoteRef/key
+        value: scheduler/staging/db
+      - op: replace
+        path: /spec/data/1/remoteRef/key
+        value: scheduler/staging/db
+      - op: replace
+        path: /spec/data/2/remoteRef/key
+        value: scheduler/staging/db
+  # Secrets Manager paths are per environment (deploy/terraform/modules/database)
+  - target: { kind: ExternalSecret, name: scheduler-bootstrap-secrets }
+    patch: |
+      - op: replace
+        path: /spec/data/0/remoteRef/key
+        value: scheduler/staging/db-admin
+      - op: replace
+        path: /spec/data/1/remoteRef/key
+        value: scheduler/staging/db-admin
+      - op: replace
+        path: /spec/data/2/remoteRef/key
+        value: scheduler/staging/db-admin
+      - op: replace
+        path: /spec/data/3/remoteRef/key
+        value: scheduler/staging/db-admin
+      - op: replace
+        path: /spec/data/4/remoteRef/key
+        value: scheduler/staging/db-admin
+      - op: replace
+        path: /spec/data/5/remoteRef/key
+        value: scheduler/staging/db
+      - op: replace
+        path: /spec/data/6/remoteRef/key
+        value: scheduler/staging/db
+      - op: replace
+        path: /spec/data/7/remoteRef/key
+        value: scheduler/staging/db
+      - op: replace
+        path: /spec/data/8/remoteRef/key
+        value: scheduler/staging/db
+  - target: { kind: ConfigMap, name: scheduler-config }
+    patch: |
+      - op: replace
+        path: /data/APP_ENV
+        value: staging
+      - op: replace
+        path: /data/APPLY_DEMO_SEED
+        value: "true"
+  - target: { kind: HorizontalPodAutoscaler, name: scheduler-api }
+    patch: |
+      - op: replace
+        path: /spec/maxReplicas
+        value: 6
+  - target: { kind: Ingress, name: scheduler-api }
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.staging.scheduler.example
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: api.staging.scheduler.example

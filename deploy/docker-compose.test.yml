@@ -1,0 +1,51 @@
+# Fully containerised test run — isolated from the dev stack (own project name, no host ports).
+#   ./deploy/docker-test.sh            (or: make docker-test)
+# Stack: postgres → migrate → api   +   test-db (empty, for integration tests)   +   tests (runner)
+name: uss-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: scheduler, POSTGRES_PASSWORD: scheduler, POSTGRES_DB: scheduler }
+    tmpfs: [/var/lib/postgresql/data]       # throwaway: nothing survives the run
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U scheduler"], interval: 2s, retries: 30 }
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on: { postgres: { condition: service_healthy } }
+    environment: { PGPASSWORD: scheduler }
+    volumes: ["../services/scheduler-service/migrations:/migrations:ro"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - for f in /migrations/V*.sql; do psql -h postgres -U scheduler -d scheduler -v ON_ERROR_STOP=1 -q -f "$$f" || exit 1; done
+
+  api:
+    build: { context: ../services/scheduler-service }   # the same image that ships to Kubernetes
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    environment:
+      APP_ENV: test
+      APP_DATABASE_URL: postgresql://scheduler:scheduler@postgres:5432/scheduler
+      APP_LOG_LEVEL: WARNING
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=2).status==200 else 1)"]
+      interval: 2s
+      retries: 60
+
+  test-db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: test, POSTGRES_PASSWORD: test, POSTGRES_DB: test }
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U test"], interval: 2s, retries: 30 }
+
+  tests:
+    build: { context: .., dockerfile: deploy/docker/test.Dockerfile }
+    depends_on:
+      api: { condition: service_healthy }
+      test-db: { condition: service_healthy }
+    environment:
+      BASE: http://api:8000
+      APP_TEST_DATABASE_URL: postgresql://test:test@test-db:5432/test
+      APP_DEPLOYED_DATABASE_URL: postgresql://scheduler:scheduler@postgres:5432/scheduler
+    volumes: ["../reports:/repo/reports"]

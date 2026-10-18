@@ -1,0 +1,196 @@
+
+━━━ 1. Preflight (Docker)
+
+━━━ 2. Deploy (PostgreSQL → migrations → API)
+ Image unified-service-scheduler-api Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 682B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.25kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1.7
+#3 ...
+
+#4 [auth] docker/dockerfile:pull token for registry-1.docker.io
+#4 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1.7
+#3 DONE 2.2s
+
+#5 docker-image://docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+#5 resolve docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e done
+#5 CACHED
+
+#6 [internal] load metadata for docker.io/library/python:3.12-slim
+#6 ...
+
+#7 [auth] library/python:pull token for registry-1.docker.io
+#7 DONE 0.0s
+
+#6 [internal] load metadata for docker.io/library/python:3.12-slim
+#6 DONE 1.7s
+
+#8 [internal] load .dockerignore
+#8 transferring context: 115B done
+#8 DONE 0.0s
+
+#9 [internal] load build context
+#9 transferring context: 1.14kB done
+#9 DONE 0.0s
+
+#10 [build 1/4] FROM docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+#10 resolve docker.io/library/python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 done
+#10 DONE 0.0s
+
+#11 [build 3/4] COPY requirements.txt .
+#11 CACHED
+
+#12 [runtime 2/6] RUN groupadd --system app && useradd --system --gid app --uid 10001 app
+#12 CACHED
+
+#13 [runtime 4/6] COPY --from=build /opt/venv /opt/venv
+#13 CACHED
+
+#14 [build 4/4] RUN pip install -r requirements.txt
+#14 CACHED
+
+#15 [runtime 3/6] WORKDIR /srv
+#15 CACHED
+
+#16 [build 2/4] RUN python -m venv /opt/venv
+#16 CACHED
+
+#17 [runtime 5/6] COPY app ./app
+#17 CACHED
+
+#18 [runtime 6/6] COPY migrations ./migrations
+#18 CACHED
+
+#19 exporting to image
+#19 exporting layers done
+#19 exporting manifest sha256:c94986983bc1c383a05f5ab7cb86718d5dc2e3c05231088a18252d71944acd57 done
+#19 exporting config sha256:e8294103297f8ce722316fb6a516bb84431c1bdc1f2faa0c173eee3c9653f78e done
+#19 exporting attestation manifest sha256:24246c97c8605672158ddb54fd834315580924d521d85825f1d8f5c37b916701 done
+#19 exporting manifest list sha256:adfe772d972fbccac73a19a01d6ccb419b1ade0594c7dd445dce31993115e539 done
+#19 naming to docker.io/library/unified-service-scheduler-api:latest done
+#19 unpacking to docker.io/library/unified-service-scheduler-api:latest done
+#19 DONE 0.0s
+
+#20 resolving provenance for metadata file
+#20 DONE 0.0s
+ Image unified-service-scheduler-api Built 
+ Network unified-service-scheduler_default Creating 
+ Volume unified-service-scheduler_pgdata Creating 
+ Volume unified-service-scheduler_pgdata Creating 
+ Network unified-service-scheduler_default Creating 
+ Volume unified-service-scheduler_pgdata Created 
+ Volume unified-service-scheduler_pgdata Created 
+ Network unified-service-scheduler_default Created 
+ Network unified-service-scheduler_default Created 
+ Container unified-service-scheduler-postgres-1 Creating 
+ Container unified-service-scheduler-postgres-1 Created 
+ Container unified-service-scheduler-migrate-1 Creating 
+ Container unified-service-scheduler-migrate-1 Created 
+ Container unified-service-scheduler-api-1 Creating 
+ Container unified-service-scheduler-api-1 Created 
+ Container unified-service-scheduler-postgres-1 Starting 
+ Container unified-service-scheduler-postgres-1 Started 
+ Container unified-service-scheduler-postgres-1 Waiting 
+ Container unified-service-scheduler-postgres-1 Healthy 
+ Container unified-service-scheduler-migrate-1 Starting 
+ Container unified-service-scheduler-migrate-1 Started 
+ Container unified-service-scheduler-migrate-1 Waiting 
+ Container unified-service-scheduler-migrate-1 Exited 
+ Container unified-service-scheduler-api-1 Starting 
+ Container unified-service-scheduler-api-1 Started 
+
+━━━ 3. Wait for readiness (http://localhost:8000/health/ready, up to 120 s)
+
+━━━ 4. Smoke test against the deployed API
+Target: http://localhost:8000   Test date: 2026-10-20 (Tuesday)
+1. Health
+  ✅ liveness 200
+  ✅ readiness 200 (database reachable)
+2. Reference data + availability (FR-04)
+  ✅ service types listed
+     EV battery check slots available on 2026-10-20 before booking: 31
+3. Book (FR-01, FR-02, FR-03)
+  ✅ booking returns 201
+     appointment c76fd848-5246-4482-8bbd-ca79f43713f3 → technician TEC-003, bay BAY-04
+4. Idempotent retry (FR-08)
+  ✅ same key + same body returns 200
+  ✅ …and the same appointment
+  ✅ missing Idempotency-Key returns 400
+5. Conflict: only one EV technician, so a second EV job at the same time is refused (FR-02, FR-06)
+  ✅ second booking returns 409
+  ✅ code is SLOT_UNAVAILABLE
+  ✅ 3 alternative times offered
+     alternatives: 2026-10-20T08:15:00+05:30, 2026-10-20T08:30:00+05:30, 2026-10-20T11:30:00+05:30
+6. Validation (FR-09)
+  ✅ before opening hours returns 422 OUTSIDE_BUSINESS_HOURS
+  ✅ someone else's vehicle returns 422
+7. Read back (FR-05)
+  ✅ GET by id returns CONFIRMED
+8. Cancel frees the technician and bay (FR-07)
+  ✅ cancel returns 200 CANCELLED
+  ✅ the previously refused booking now succeeds (201)
+9. Metrics (NFR-10)
+  ✅ business counter exported
+
+Result: 16 passed, 0 failed
+
+━━━ 5. Database integrity check (no overlapping CONFIRMED bookings — NFR-05)
+overlapping pairs: 0
+
+━━━ 6. Python test environment
+
+━━━ 7. Lint, types, layering
+All checks passed!
+30 files already formatted
+Success: no issues found in 20 source files
+
+╔══╗─────────▶╔╗ ╔╗      ╔╗◀───┐
+╚╣╠╝◀─────┐  ╔╝╚╗║║────▶╔╝╚╗   │
+ ║║   ╔══╦══╦╩╗╔╝║║  ╔╦═╩╗╔╝╔═╦══╗
+ ║║╔══╣╔╗║╔╗║╔╣║ ║║ ╔╬╣╔╗║║ ║│║╔═╝
+╔╣╠╣║║║╚╝║╚╝║║║╚╗║╚═╝║║║║║╚╗║═╣║
+╚══╩╩╩╣╔═╩══╩╝╚═╝╚═══╩╩╝╚╩═╩╩═╩╝
+  └──▶║║                    ▲ 
+      ╚╝────────────────────┘
+
+
+---------
+Contracts
+---------
+
+Analyzed 41 files, 116 dependencies.
+------------------------------------
+
+Domain stays framework-free KEPT
+
+Contracts: 1 kept, 0 broken.
+
+━━━ 8. Unit, use-case, API and contract tests
+.....................................................                    [100%]
+53 passed, 4 deselected in 0.24s
+
+━━━ 9. PostgreSQL integration tests (throwaway database on :55432)
+....                                                                     [100%]
+4 passed, 53 deselected in 0.29s
+
+━━━ Summary
+  ✅ Docker available (1s)
+  ✅ docker compose up (9s)
+  ✅ API ready (2s)
+  ✅ Smoke test (16 checks) (1s)
+  ✅ Integrity check (0s)
+  ✅ venv ready (0s)
+  ✅ ruff + mypy + import contract (0s)
+  ✅ pytest (1s)
+  ✅ pytest -m integration (4s)
+  stack stopped, data deleted
+  log: /Users/sprthy/work/tech/systemdesign/claude_sample/unified_service_scheduler/reports/local-test-20261016-133744.log
+RESULT: PASS

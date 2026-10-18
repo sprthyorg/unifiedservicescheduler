@@ -1,0 +1,16 @@
+%% USS-ARC-001 v1.0.0 — C4 system context
+C4Context
+  title Unified Service Scheduler — system context
+  Person(customer, "Customer", "Books service for own vehicle")
+  Person(advisor, "Service advisor", "Books for walk-in / phone customers")
+  System(uss, "Unified Service Scheduler", "Allocates technician + bay, stores appointments")
+  System_Ext(gw, "API gateway + IdP", "OAuth2/JWT, rate limits")
+  System_Ext(dms, "Dealer management system", "Bays, technicians, skills, shifts, hours")
+  System_Ext(crm, "CRM", "Customers, vehicles")
+  System_Ext(notify, "Notification platform", "SMS / email / push")
+  Rel(customer, gw, "HTTPS")
+  Rel(advisor, gw, "HTTPS")
+  Rel(gw, uss, "REST /v1")
+  Rel(dms, uss, "Reference data (batch ETL in 1.0)")
+  Rel(crm, uss, "Customer & vehicle data (batch ETL in 1.0)")
+  Rel(uss, notify, "appointment.* events (1.1 relay)")

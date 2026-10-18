@@ -1,0 +1,40 @@
+%% USS-DSN-SEQ-001 v1.0.0 — POST /v1/appointments (FR-01, FR-02, FR-03, FR-06, FR-08, FR-09)
+sequenceDiagram
+  autonumber
+  actor C as Customer / Advisor
+  participant GW as API gateway
+  participant API as scheduler-api
+  participant DB as PostgreSQL
+  C->>GW: POST /v1/appointments (Idempotency-Key, JWT)
+  GW->>GW: validate JWT, customer_id == sub (A-04)
+  GW->>API: forward + X-Request-ID
+  API->>API: schema validation (pydantic) → 422 on failure
+  API->>DB: BEGIN
+  API->>DB: SELECT dealership, service_type, customer, vehicle
+  alt unknown reference / vehicle not owned
+    API-->>C: 422 UNKNOWN_* / VEHICLE_NOT_OWNED_BY_CUSTOMER
+  end
+  API->>DB: SELECT pg_advisory_xact_lock(dealership)
+  API->>DB: SELECT … WHERE customer_id=? AND idempotency_key=?
+  alt key seen
+    alt same request_hash
+      API-->>C: 200 Idempotent-Replayed (original appointment)
+    else different body
+      API-->>C: 409 IDEMPOTENCY_KEY_REUSED
+    end
+  end
+  API->>API: time rules (aligned, lead ≥ 60 min, ≤ 90 days, inside opening hours)
+  API->>DB: SELECT overlapping CONFIRMED for vehicle → 409 VEHICLE_ALREADY_BOOKED
+  API->>DB: SELECT CONFIRMED appointments of dealership on local day
+  API->>DB: SELECT technicians(+shifts), bays of dealership
+  API->>API: allocation.choose(slot) — qualified tech ∧ compatible bay free for [start,end)
+  alt none free
+    API->>API: compute ≤3 nearest alternatives (7-day search)
+    API->>DB: ROLLBACK
+    API-->>C: 409 SLOT_UNAVAILABLE + alternatives[]
+  else allocated
+    API->>DB: INSERT appointments (exclusion constraints re-check)
+    API->>DB: INSERT outbox (appointment.confirmed)
+    API->>DB: COMMIT (releases advisory lock)
+    API-->>C: 201 Created + Location
+  end

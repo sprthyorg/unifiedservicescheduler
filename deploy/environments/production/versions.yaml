@@ -1,0 +1,6 @@
+environment: production
+system: unified-service-scheduler
+components:
+  scheduler-service: { version: "not-deployed", image_digest: null, api_contract: null, schema: null }
+# 1.0.0 is promoted here at milestone M2 after approvals in releases/v1.0.0/approvals.md
+docs_baseline: { requirements: v1.0, architecture: 1.0.0, design: 1.0.0 }
